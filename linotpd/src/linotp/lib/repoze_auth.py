@@ -35,13 +35,13 @@ from linotp.lib.realm import getDefaultRealm
 from linotp.lib.selftest import isSelfTest
 import traceback
 
-from linotp.lib.user import check_user_password
+from linotp.lib.util import authenticate_user
 
 class UserModelPlugin(object):
 
     def authenticate(self, environ, identity):
         log.info("[authenticate] entering repoze authenticate function.")
-        #log.debug( identity )
+        log.warn( identity )
         username = None
         realm = None
         success = None
@@ -78,27 +78,14 @@ class UserModelPlugin(object):
         if isSelfTest():
             success = "%s@%s" % (unicode(username), unicode(realm))
         else:
-            success = check_user_password(username, realm, password)
+            success = authenticate_user(username, realm, password)
 
         return success
 
     def add_metadata(self, environ, identity):
-        #username = identity.get('repoze.who.userid')
-        #user = User.get(username)
-        #user = "conelius koelbel"
-        #log.info( "add_metadata: %s" % identity )
-
-        #pp = pprint.PrettyPrinter(indent=4)
-        #log.info("add_meta: environ %s" % pp.pformat(environ)
         log.debug("[add_metadata] add some metatata")
-        #for k in environ.keys():
-        #    log.debug("add_metadata: environ[%s]: %s" % ( k, environ[k] ))
 
         for k in identity.keys():
             log.debug("[add_metadata] identity[%s]: %s" % (k, identity[k]))
-
-        #if identity.has_key('realm'):
-        #    identity.update( { 'realm' : identity['realm'] } )
-        #    log.info("add_metadata: added realm: %s" % identity['realm'] )
 
         return identity

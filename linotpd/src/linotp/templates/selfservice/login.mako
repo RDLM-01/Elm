@@ -40,7 +40,7 @@
 
 <link type="text/css" rel="stylesheet" href="/selfservice/style.css" />
 <link type="text/css" rel="stylesheet" href="/selfservice/custom-style.css" />
-<script type="text/javascript" src="/js/jquery-1.7.2.min.js"></script>
+<script type="text/javascript" src="/js/jquery-1.11.1.min.js"></script>
 
 </head>
 
@@ -59,7 +59,7 @@ $(document).ready(function() {
 	</div>
 	
 	<div class="float_right">
-	Open Source Edition<br>
+	Elm Authentication System<br>
 	<span class=portalname>${_("Selfservice Portal")}</span>
 	</div>
 </div>
@@ -73,7 +73,8 @@ ${_("This is the LinOTP self service portal. You may login here with your userna
 <P>
 ${_("Within the self service portal you may reset the PINs of your tokens, assign new tokens or resync your tokens.")}
 </p>
-${_("If you lost a token, you may also disable this token.")}
+<p>Your access code is your PIN followed by your six-digit one time password.</p>
+<p>If you do not have a token assigned to your account yet, this page will accept any value for the 'PIN and one-time password' field.</p>
 
 </div> <!-- sidebar -->
 
@@ -81,10 +82,10 @@ ${_("If you lost a token, you may also disable this token.")}
 <h1>${_("Login to LinOTP self service")}</h1>
 
   <p>
-    <form action="/account/dologin" method="POST">
+    <form action="/login" method="POST">
       <table>
         <tr><td><label for=login>${_("Username")}:</label></td>
-        <td><input type="text" id="login" name="login" value="" /></td></tr>
+        <td><input readonly=true id="login" name="login" value ="${c.remote_user}" /></td></tr>
 		%if c.realmbox:
         	<tr>
         %else:
@@ -102,7 +103,7 @@ ${_("If you lost a token, you may also disable this token.")}
 	        %endfor
         </select>
         </td></tr>
-        <tr><td><label for=password>${_("Password")}:</label></td>
+        <tr><td><label for=password>${_("Access code")}:</label></td>
         <td><input autocomplete="off" type="password" id="password" name="password" value ="" /></td></tr>
         <tr><td></td>
         <td>   <input type="submit" value="Login" /></td></tr>

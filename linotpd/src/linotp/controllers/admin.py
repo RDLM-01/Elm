@@ -109,7 +109,11 @@ class AdminController(BaseController):
             c.audit['client'] = get_client()
             self.set_language()
             # Session handling
-            check_session()
+            if (False == check_session(request)):
+                c.audit['action'] = request.path[1:]
+                c.audit['info'] = "session expired"
+                audit.log(c.audit)
+                abort(401, "No valid session")
 
             Session.commit()
             return request
@@ -172,51 +176,6 @@ class AdminController(BaseController):
         #                           [('WWW-Authenticate', 'Basic realm="%s"' % realm)]
         #                          )
         #abort(401, "You are not authenticated")
-
-
-    def getsession(self):
-        '''
-        This generates a session key and sets it as a cookie
-        set_cookie is defined in python-webob::
-
-            def set_cookie(self, key, value='', max_age=None,
-                   path='/', domain=None, secure=None, httponly=False,
-                   version=None, comment=None, expires=None, overwrite=False):
-        '''
-        import binascii
-        try:
-            web_host = request.environ.get('HTTP_HOST')
-            # HTTP_HOST also contains the port number. We need to stript this!
-            web_host = web_host.split(':')[0]
-            log.debug("[getsession] environment: %s" % request.environ)
-            log.debug("[getsession] found this web_host: %s" % web_host)
-            random_key = os.urandom(SESSION_KEY_LENGTH)
-            cookie = binascii.hexlify(random_key)
-            log.debug("[getsession] adding session cookie %s to response." % cookie)
-            # we send all three to cope with IE8
-            response.set_cookie('admin_session', value=cookie, domain=web_host)
-            # this produces an error with the gtk client
-            # response.set_cookie('admin_session', value=cookie,  domain=".%" % web_host )
-            response.set_cookie('admin_session', value=cookie, domain="")
-            return sendResult(response, True)
-
-        except Exception as e:
-            log.error("[getsession] unable to create a session cookie: %r" % e)
-            log.error("[getsession] %s" % traceback.format_exc())
-            Session.rollback()
-            return sendError(response, e)
-
-        finally:
-            Session.close()
-            log.debug("[getsession] done")
-
-
-    def dropsession(self):
-        #request.cookies.pop( 'admin_session', None )
-        # FIXME: Does not seem to work
-        response.set_cookie('admin_session', None, expires=1)
-        return
-
 
     def show(self):
         """
@@ -2011,7 +1970,7 @@ class AdminController(BaseController):
                     init_param['vasco_auth'] = TOKENS[serial]['tokeninfo'].get('auth')
 
                 # add ocrasuite for ocra tokens, only if ocrasuite is not empty
-                if TOKENS[serial]['type'] == 'ocra':
+                if TOKENS[serial]['type'] in ['ocra', 'ocra2']:
                     if TOKENS[serial].get('ocrasuite', "") != "":
                         init_param['ocrasuite'] = TOKENS[serial].get('ocrasuite')
 

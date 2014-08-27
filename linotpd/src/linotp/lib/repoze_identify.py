@@ -32,6 +32,7 @@ import cgi
 from paste.httpheaders import CONTENT_LENGTH
 from paste.httpheaders import CONTENT_TYPE
 from paste.httpheaders import LOCATION
+from paste.httpheaders import REMOTE_USER
 from paste.httpexceptions import HTTPFound
 from paste.httpexceptions import HTTPUnauthorized
 
@@ -124,10 +125,11 @@ class FormPlugin(FormPluginBase):
             # this smells funny
             environ['wsgi.input'] = StringIO()
             form.update(query)
-            try:
+            try:            
                 login = form['login']
                 password = form['password']
                 realm = form['realm']
+                raise ValueError('cd %s' % login)
             except KeyError:
                 return None
             del query[self.login_form_qs]
@@ -150,7 +152,8 @@ class FormPlugin(FormPluginBase):
                 headers = list(app_headers) + list(forget_headers)
                 return HTTPFound(headers=headers)
 
-        form = self.formbody or _DEFAULT_FORM
+        form = (self.formbody or _DEFAULT_FORM)
+        
         if self.formcallable is not None:
             form = self.formcallable(environ)
         def auth_form(environ, start_response):
@@ -203,7 +206,7 @@ class RedirectingFormPlugin(FormPluginBase):
                     }
             except KeyError:
                 credentials = None
-
+           
             if credentials is not None:
                 max_age = form.get('max_age', None)
                 if max_age is not None:

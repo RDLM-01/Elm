@@ -88,7 +88,11 @@ class OcraController(BaseController):
             c.audit['success'] = False
             c.audit['client'] = get_client()
             if action != "check_t":
-                check_session()
+                if (False == check_session(request)):
+                    c.audit['action'] = request.path[1:]
+                    c.audit['info'] = "session expired"
+                    audit.log(c.audit)
+                    abort(401, "No valid session")
 
             return response
 

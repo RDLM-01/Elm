@@ -40,6 +40,7 @@ from linotp.lib.base import BaseController
 from pylons.templating import render_mako as render
 from mako.exceptions import CompileException
 
+from paste.deploy.converters import asbool
 
 # Our Token stuff
 from linotp.lib.token   import TokenIterator
@@ -100,18 +101,13 @@ class ManageController(BaseController):
             # Also exclude custom-style.css, since the CSRF check
             # will always fail and return a HTTP 401 anyway.
             # A HTTP 404 makes more sense.
-            if request.path.lower() in ['/manage/', '/manage',
-                                        '/manage/logout',
-                                        '/manage/audittrail',
-                                        '/manage/policies',
-                                        '/manage/tokenview',
-                                        '/manage/userview',
-                                        '/manage/help',
-                                        '/manage/custom-style.css']:
-                pass
-            else:
-                check_session()
-
+            
+            if (False == check_session(request)):
+                c.audit['action'] = request.path[1:]
+                c.audit['info'] = "session expired"
+                audit.log(c.audit)
+                abort(401, "No valid session")
+            
         except Exception as exx:
             log.error("[__before__::%r] exception %r" % (action, exx))
             log.error("[__before__] %s" % traceback.format_exc())
@@ -140,12 +136,10 @@ class ManageController(BaseController):
         '''
 
         try:
+            c.debug = asbool(config.get('debug', False))
             c.title = "LinOTP Management"
             admin_user = getUserFromRequest(request)
             if admin_user.has_key('login'):
-                (login, realm) = admin_user['login'].split("@")
-                c.login = login;
-                c.realm = realm;
                 c.admin = admin_user['login']
 
             log.debug("[index] importers: %s" % IMPORT_TEXT)
@@ -201,13 +195,8 @@ class ManageController(BaseController):
 
             c.tokentypes = _getTokenTypes()
 
-            http_host = request.environ.get("HTTP_HOST")
-            url_scheme = request.environ.get("wsgi.url_scheme")
-            c.logout_url = "%s://log-me-out:fake@%s/manage/logout" % (url_scheme, http_host)
-            # c.logout_url_ie = "%s://%s/manage/logout_ie" % (url_scheme, http_host)
-            
             Session.commit()
-            ren = render('/manage/start.mako')
+            ren = render('/manage/manage-base.mako')
             return ren
 
         except PolicyException as pe:
@@ -344,7 +333,7 @@ class ManageController(BaseController):
             if not pol['active']:
                 filterRealm = ["*"]
 
-            # check if we only want to see ONE realm or see all realms we are allowed to see.
+            # check if we only want to see ONE realm or see all realms we are allowerd to see.
             if filter_realm:
                 if filter_realm in filterRealm or '*' in filterRealm:
                     filterRealm = [filter_realm]
@@ -591,14 +580,7 @@ class ManageController(BaseController):
         http_host = request.environ.get("HTTP_HOST")
         url_scheme = request.environ.get("wsgi.url_scheme", "https")
         redirect("%s://%s/manage/" % (url_scheme, http_host))
-    
-    def logout_ie(self):
-        '''
-        redirect logout
-        '''
-        from pylons.controllers.util import abort
-        abort(401, "Logged out. Please close this tab.")
-     
+
 
     def help(self):
         '''

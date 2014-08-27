@@ -44,7 +44,6 @@ from linotp.lib.resolver import getResolverObject
 from linotp.lib.realm import createDBRealm
 from linotp.lib.selftest import isSelfTest
 
-
 ENCODING = 'utf-8'
 
 log = logging.getLogger(__name__)
@@ -420,19 +419,7 @@ def getResolvers(user):
                     Resolver = r["useridresolver"]
 
     return Resolver
-
-def getAllUserRealms(user):
-    results = [];
-    realms = getRealms();
-    
-    # get a list of realms the user is present in
-    for key, v in realms.items():
-        resolvers = getResolversOfUser(User(user.login, v['realmname'], ""))
-        if (resolvers):
-            results.append(v['realmname'])
-            
-    return results;
-    
+  
 def getResolversOfUser(user):
     '''
     This returns the list of the Resolvers of a user in a given realm.
@@ -764,5 +751,37 @@ def check_user_password(username, realm, password):
 
     return success
 
+# given a user name, get a list of realms they exist in 
+# (this corresponds to the eduPersonOrgUnitDN values)
+def getAllUserRealms(name):
+    results = []
+    realms = getRealms()
+    
+    # get a list of realms the user is present in
+    for key, v in realms.items():
+        resolvers = getResolversOfUser(User(name, v['realmname'], ""))
+        if (resolvers):
+            results.append(v['realmname'])
+            
+    return results;
+    
+def getAdminRealms(identity):
+    results = []
+    if identity is None:
+        return results
+        
+    (user, _foo, realm) = identity.rpartition('@')
+    realms = getAllUserRealms(user)
+    
+    from linotp.lib.policy import checkPolicyPre
+    for realm in realms:
+        try:
+            res = checkPolicyPre('admin', 'show', {}, user = User(user, realm, ""))
+        finally:
+            log.debug("%s is an administrator in realm %s" % (identity, realm))
+            results.append(realm)
+    
+    return results
+ 
 #eof###########################################################################
 

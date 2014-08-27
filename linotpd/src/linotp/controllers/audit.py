@@ -81,7 +81,11 @@ class AuditController(BaseController):
         try:
             audit.initialize()
             c.audit['client'] = get_client()
-            check_session()
+            if (False == check_session(request)):
+                c.audit['action'] = request.path[1:]
+                c.audit['info'] = "session expired"
+                audit.log(c.audit)
+                abort(401, "No valid session")
 
         except Exception as exx:
             log.error("[__before__::%r] exception %r" % (action, exx))

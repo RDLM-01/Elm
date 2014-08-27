@@ -45,9 +45,7 @@ from linotp.lib.util    import get_copyright_info
 
 from linotp.lib.realm    import getRealms
 from linotp.lib.realm    import getDefaultRealm
-from linotp.lib.user     import getRealmBox
-
-
+from linotp.lib.user     import getRealmBox, getAdminRealms
 
 import logging
 import webob
@@ -74,7 +72,18 @@ class AccountController(BaseController):
         /account/dologin
     '''
 
+    identity = request.environ.get('repoze.who.userid')
 
+    if identity is not None:
+        log.warn("[alogin] id present")
+        if (getAdminRealms(identity) is not None):
+            redirect("/manage")
+        else:
+            # After login We always redirect to the start page
+            redirect("/selfservice/index")
+    else:
+       log.warn("[alogin] env %s" % request.environ)
+            
     def __before__(self, action, **params):
 
         log.debug("[__before__::%r] %r" % (action, params))
@@ -103,24 +112,64 @@ class AccountController(BaseController):
             log.debug("[__before__::%r] done" % (action))
 
     def login(self):
-        log.debug("[login] selfservice login screen")
-        identity = request.environ.get('REMOTE_USER')
+        identity = request.environ.get('repoze.who.userid')
+
         if identity is not None:
-            # After login We always redirect to the start page
-            redirect("/selfservice")
-
-        Session.close()
-        
-
-    def logout(self):
-        identity = request.environ.get('REMOTE_USER')
-        if identity is None:
-            # After logout We always redirect to the start page
-            redirect("/")
+            log.warn("[login] id present")
+            if (getAdminRealms(identity) is not None):
+                redirect("/manage")
+            else:
+                # After login We always redirect to the start page
+                redirect("/selfservice/index")
+        else:
+            log.warn("[login] env %s" % request.environ)
             
-        redirect('https://webauth.ox.ac.uk/logout')
-        Session.close()
-        
-        
+        res = {}
+        try:
+            c.defaultRealm = getDefaultRealm()
+            res = getRealms()
+
+            c.realmArray = []
+            #log.debug("[login] %s" % str(res) )
+            for (k, v) in res.items():
+                c.realmArray.append(k)
+
+            c.realmbox = getRealmBox()
+            log.debug("[login] displaying realmbox: %i" % int(c.realmbox))
+
+            c.remote_user = request.environ.get('REMOTE_USER')
+            
+            Session.commit()
+            response.status = '%i Logout from LinOTP' % LOGIN_CODE
+            return render('/selfservice/login.mako')
+
+        except Exception as e:
+            log.error('[login] failed %r' % e)
+            log.error('[login] %s' % traceback.format_exc())
+            Session.rollback()
+            return sendError(response, e)
+
+        finally:
+            Session.close()
+       
+    def test(self):
+        identity = request.environ.get('repoze.who.identity')
+        if identity is None:
+            # Force skip the StatusCodeRedirect middleware; it was stripping
+            #   the WWW-Authenticate header from the 401 response
+            request.environ['pylons.status_code_redirect'] = True
+            # Return a 401 (Unauthorized) response and signal the repoze.who
+            #   basicauth plugin to set the WWW-Authenticate header.
+            abort(401, 'You are not authenticated')
+
+        log.debug(u"[test] identity: %r" % identity)
+        return """
+<body>
+Hello, you are logged in as %s.
+<a href="/logout">logout</a>
+</body>
+</html>
+""" % identity['repoze.who.userid']
+     
 #eof##########################################################################
 

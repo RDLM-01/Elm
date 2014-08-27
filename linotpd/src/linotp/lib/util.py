@@ -30,11 +30,10 @@ from linotp.lib.config import getFromConfig
 
 from pylons import request
 from pylons import config
-from pylons.controllers.util import abort
+from pylons.controllers.util import abort, redirect
 
 import binascii
 import os
-import time
 
 import string
 from linotp.lib.crypt import urandom
@@ -42,12 +41,13 @@ from linotp.lib.crypt import geturandom
 
 import pkg_resources
 
-
 import logging
 log = logging.getLogger(__name__)
 from linotp.lib.selftest import isSelfTest
 from netaddr import IPAddress, IPNetwork
 import re
+
+import urllib, httplib2, json
 
 SESSION_KEY_LENGTH = 32
 
@@ -136,66 +136,68 @@ def generate_otpkey(key_size=20):
 def generate_password(size=6, characters=string.ascii_lowercase + string.ascii_uppercase + string.digits):
     return ''.join(urandom.choice(characters) for x in range(size))
 
-def check_session():
+def check_session(request):
     '''
-    This function checks the session cookie for management API
-    and compares it to the session parameter
+    This function checks the session cookie 
+    
     '''
-    if isSelfTest():
-        return
-
-    # check if the client is in the allowed IP range
-    no_session_clients = [c.strip() for c in config.get("linotpNoSessionCheck", "").split(",")]
-    client = request.environ.get('REMOTE_ADDR', None)
-    log.debug("[check_session] checking %s in %s" % (client, no_session_clients))
-    for network in no_session_clients:
-        if not network:
-            continue
-        try:
-            if IPAddress(client) in IPNetwork(network):
-                log.debug("[check_session] skipping session check since client %s in allowed: %s" % (client, no_session_clients))
-                return
-        except Exception as ex:
-            log.warning("[check_session] misconfiguration in linotpNoSessionCheck: %r - %r" % (network, ex))
-
-    if request.path.lower() == '/admin/getsession':
-        log.debug('[check_session] requesting a new session cookie')
-    else:
-        cookie = request.cookies.get('admin_session')
-        session = request.params.get('session')
-        # doing any other request, we need to check the session!
-        log.debug("[check_session]: session: %s" % session)
-        log.debug("[check_session]: cookie:  %s" % cookie)
-        if session is None or session == "" or session != cookie:
-            log.error("[check_session] The request did not pass a valid session!")
-            abort(401, "You have no valid session!")
-            pass
-
-def check_selfservice_session():
-    '''
-    This function checks the session cookie for the
-    selfservcice session
-    '''
+                
     res = True
     cookie = None
     session = None
     log.debug(request.path.lower())
-    # All functions starting with /selfservice/user are data functions and protected
-    # by the session key
-    if request.path.lower()[:17] != "/selfservice/user":
-        log.info('[check_selfservice_session] nothing to check')
+                
+    # GUI function get not passed the session key.
+    if request.path.lower()[:17] == "/selfservice/user":
+        log.info('[check_session] nothing to check')
     else:
-        expiry = request.environ.get('WEBAUTH_TOKEN_EXPIRATION')
-        if expiry is not None:
-            log.debug("[check_selfservice_session] Got header!")
-            if (expiry < time.time()):
-                log.warning("[check_selfservice_session] Webauth token has expired.")
-                res = False
+        if request.path.lower() in [
+                                    "/",
+                                    
+                                    '/manage/', 
+                                    '/manage',
+                                    '/manage/logout',
+                                    '/manage/audittrail',
+                                    '/manage/policies',
+                                    '/manage/tokenview',
+                                    '/manage/userview',
+                                    '/manage/help',
+                                    '/manage/custom-style.css',
+                                    '/selfservice/setpin',
+                                    '/selfservice/webprovisiongoogletoken',
+                                    "/selfservice/custom-style.css",
+                                ]:
+            log.info('nothing to check')
         else:
-            log.warning("[check_selfservice_session] No expiry found.")
-            res = False
+            remote_user = request.environ.get('WEBAUTH_USER')
+            identity = request.environ.get('repoze.who.identity').get('repoze.who.userid')
+            if identity is None or remote_user is None:
+                res = False
+                log.error("[check_session] Missing identity token: repoze.who.userid = %s, WEBAUTH_USER = %s" % (identity, remote_user))  
+                log.error("got: env %s" % request.environ)
+                #redirect('account/logout')
+            else:
+                (user, _foo, _bar) = identity.rpartition('@')
+                if (remote_user != identity):
+                   res = False
+                   log.error("[check_session] Mismatched identity token: repoze.who.userid = %s, WEBAUTH_USER = %s" % (identity, remote_user))  
+                   redirect('account/logout')
             
+                if request.cookies.get('linotp_session') != None:
+                    try:
+                        cookie = request.cookies.get('linotp_session')[0:40]
+                        session = request.params.get('session')[0:40]
+                    except Exception as e:
+                        log.warning("[check_session] failed to check selfservice session: %r" % e)
+                        res = False
+                        log.info("[check_session]: session: %s" % session)
+                        log.info("[check_session]: cookie:  %s" % cookie)
+                    if session is None or session != cookie:
+                        log.error("[check_session] The request %s did not pass a valid session!" % request.url)  
+                        res = False
+  
     return res
+
 
 def remove_session_from_param(param):
     '''
@@ -340,3 +342,38 @@ def checksum(msg):
             if n != 0:
                 crc = crc ^ 0x8408
     return crc
+
+# Copyright Cornelius Kölbel / privacyIDEA, http://www.privacyidea.org
+def authenticate_user(username, realm, password):
+    res = False
+    success = None
+    data = urllib.urlencode({'user' : username,
+                                'realm' : realm,
+                                'pass' : password})
+    url = "https://localhost/validate/check"
+    headers = {"Content-type": "application/x-www-form-urlencoded",
+                   "Accept": "text/plain"}
+    try:
+        ## is httplib compiled with ssl?
+        http = httplib2.Http(disable_ssl_certificate_validation = True)
+    except TypeError as exx:
+        ## not so on squeeze:
+        ## TypeError: __init__() got an unexpected keyword argument
+        ## 'disable_ssl_certificate_validation'
+        log.warning("httplib2 'disable_ssl_certificate_validation' "
+                    "attribute error: %r" % exx)
+        ## so we run in fallback mode
+        http = httplib2.Http()
+    (_resp, content) = http.request(url,
+                                   method="POST",
+                                   body=data,
+                                   headers=headers)
+    rv = json.loads(content)
+    if rv.get("result"):        
+        # in case of normal json output
+        res = rv['result'].get('value', False)
+
+    if res:
+        success = "%s@%s" % (username, realm)
+    
+    return success
